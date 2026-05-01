@@ -2,32 +2,46 @@
 Simple toy environment
 """
 import numpy as np
+import torch as tr
 
-S0 = .01 # stdev in initial states and transitions
+S0 = .01 # stdev in initial states
 DT = .1 # time delta for forward euler
 
 def step(state, action):
-    return np.clip(state + action * DT + S0*np.random.randn(*state.shape), 0, 1)
+    # return np.clip(state + action * DT, 0, 1)
+    return tr.clamp(state + action * DT, 0, 1)
 
 def reward(states):
     return \
-        np.exp(-((states - np.array([1.,1.]))**2).sum(axis=-1)/.2) - \
-        np.exp(-((states - np.array([.4,.2]))**2).sum(axis=-1)/.1) - \
-        np.exp(-((states - np.array([.6,.8]))**2).sum(axis=-1)/.1)
+        tr.exp(-((states - tr.tensor([1.,1.]))**2).sum(dim=-1)/.2) - \
+        tr.exp(-((states - tr.tensor([.4,.2]))**2).sum(dim=-1)/.1) - \
+        tr.exp(-((states - tr.tensor([.6,.8]))**2).sum(dim=-1)/.1)    # return \
+    #     np.exp(-((states - np.array([1.,1.]))**2).sum(axis=-1)/.2) - \
+    #     np.exp(-((states - np.array([.4,.2]))**2).sum(axis=-1)/.1) - \
+    #     np.exp(-((states - np.array([.6,.8]))**2).sum(axis=-1)/.1)
 
 def rollout(num_steps, batch_size, policy):
-    states = np.empty((num_steps, batch_size, 2))
-    states[0] = np.fabs(S0*np.random.randn(batch_size, 2))
+    # states = np.empty((num_steps, batch_size, 2))
+    # states[0] = np.fabs(S0*np.random.randn(batch_size, 2))
+    # for t in range(num_steps-1):
+    #     states[t+1] = step(states[t], policy(t, states[t]))
+    states = [(S0*tr.randn(batch_size, 2)).abs()]
     for t in range(num_steps-1):
-        states[t+1] = step(states[t], policy(t, states[t]))
-    return states
+        states.append( step(states[t], policy(t, states[t])) )
+    return tr.stack(states)
 
-class LinearPolicy:
+
+# class LinearPolicy:
+#     def __init__(self, num_steps):
+#         self.weights = [np.zeros((2,2)) for _ in range(num_steps)]
+#         self.bias = [np.ones(2) for _ in range(num_steps)]
+#     def __call__(self, t, states):
+#         return states @ self.weights[t] + self.bias[t]
+class TimeVaryingLinearPolicy:
     def __init__(self, num_steps):
-        self.weights = [np.zeros((2,2)) for _ in range(num_steps)]
-        self.bias = [np.ones(2) for _ in range(num_steps)]
+        self.lins = [tr.nn.Linear(2,2) for _ in range(num_steps)]
     def __call__(self, t, states):
-        return states @ self.weights[t] + self.bias[t]
+        return self.lins[t](states)
 
 if __name__ == "__main__":
 
@@ -39,7 +53,8 @@ if __name__ == "__main__":
 
     # do some rollouts
     def random_policy(t, states):
-        return np.random.randn(*states.shape)
+        return tr.randn(*states.shape)
+        # return np.random.randn(*states.shape)
     linear_policy = LinearPolicy(num_steps)
 
     rstates = rollout(num_steps, 1, random_policy)
